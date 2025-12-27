@@ -1,6 +1,7 @@
 const { registrarLog } = require('./logs.js');
 const { enviarFicha } = require('./ficha.js');
 const { enviarDM } = require('./sendDM.js');
+const { enviarMensagemBoasVindas } = require('./sendMessage.js');
 
 /**
  * Função principal para lidar com interações (Select Menus e Botões)
@@ -66,17 +67,22 @@ async function handleInteraction(interaction) {
       if (isAccept) {
         // --- CASO ACEITO ---
         if (applicant) {
+          // Avisa no PV
+          await enviarDM(applicant, "Você foi aceito na **Resenha**.");
           // Adiciona cargo de membro e remove convidado
           await applicant.roles.add(process.env.MEMBER_ROLE_ID).catch(console.error);
           await applicant.roles.remove(process.env.GUEST_ROLE_ID).catch(console.error);
+          
+          // Envia mensagem no chat geral
+          await enviarMensagemBoasVindas(interaction.client, applicantId);
         }
         // Registra no canal de logs
         await registrarLog(interaction.client, 'aceito', member, { id: applicantId }, selectedUserId);
       } else {
         // --- CASO NEGADO ---
         if (applicant) {
-          // Tenta avisar no PV antes de expulsar
-          await enviarDM(applicant, "Infezlizmente você não foi aceito na **Resenha**.");
+          // Avisa no PV antes de expuslar
+          await enviarDM(applicant, "Você não foi aceito na **Resenha**.");
           // Expulsa o usuário
           await applicant.kick("Verificação negada.").catch(console.error);
         }
