@@ -28,18 +28,16 @@ const BASE_URL =
   "&titleLen=8" +
   "&elipsis=true";
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
 let lastMessage = null; // Variável para armazenar a referência da mensagem
 
 function buildUrl() {
   return `${BASE_URL}&t=${Date.now()}`;
 }
 
-async function sendPng() {
-  const channel = await client.channels.fetch(CHANNEL_ID);
+async function sendPng(client) {
+  const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
   if (!channel || !channel.isTextBased()) {
-    console.error("Canal inválido ou não é de texto.");
+    console.error("Canal de convite inválido ou não é de texto.");
     return;
   }
 
@@ -112,24 +110,24 @@ async function sendPng() {
   if (lastMessage) {
     try {
       lastMessage = await lastMessage.edit(payload);
-      console.log("✅ Mensagem editada com sucesso (renderizado via Puppeteer)");
+      console.log("✅ Mensagem de convite editada com sucesso");
     } catch (error) {
       console.error("Erro ao editar mensagem, enviando nova:", error);
       lastMessage = await channel.send(payload);
     }
   } else {
     lastMessage = await channel.send(payload);
-    console.log("✅ Mensagem enviada com sucesso (renderizado via Puppeteer)");
+    console.log("✅ Mensagem de convite enviada com sucesso");
   }
 }
 
-client.once("ready", async () => {
-  console.log(`🤖 Online como ${client.user.tag}`);
+// Função exportada para iniciar o ciclo
+async function startInviteUpdater(client) {
+  console.log("Iniciando atualizador de convite...");
+  await sendPng(client);
 
-  await sendPng();
+  // Atualiza a cada 15 minutos (ajustado conforme pedido anterior para editar/atualizar)
+  setInterval(() => sendPng(client), 15 * 60 * 1000);
+}
 
-  // Atualiza a cada 10 minutos
-  setInterval(sendPng, 10 * 60 * 1000);
-});
-
-client.login(process.env.BOT_TOKEN);
+module.exports = { startInviteUpdater };
