@@ -1,3 +1,4 @@
+const { ActionRowBuilder } = require('discord.js');
 const { registrarLog } = require('./logs.js');
 const { enviarFicha } = require('./ficha.js');
 const { enviarDM } = require('./sendDM.js');
@@ -10,8 +11,47 @@ const { enviarMensagemBoasVindas } = require('./sendMessage.js');
 async function handleInteraction(interaction) {
   // --- Lógica do Menu de Seleção (Usuário envia a ficha) ---
   if (interaction.isUserSelectMenu() && interaction.customId === 'verificar_usuario') {
-    const selectedUserId = interaction.values[0]; // ID do usuário selecionado no menu
     const applicantId = interaction.user.id; // ID de quem está tentando entrar
+
+    // Verifica se o usuário possui o cargo de convidado
+    if (!interaction.member.roles.cache.has(process.env.GUEST_ROLE_ID)) {
+      return interaction.reply({
+        content: `Para se verificar é necessário o cargo de <@&${process.env.GUEST_ROLE_ID}>.`,
+        ephemeral: true
+      });
+    }
+
+    // --- VERIFICAÇÃO DE FICHA DUPLICADA ---
+    const fichasChannelId = process.env.FICHAS_CHANNEL_ID;
+    const fichasChannel = interaction.client.channels.cache.get(fichasChannelId);
+
+    if (fichasChannel) {
+      try {
+        // Busca as últimas 50 mensagens para ver se o usuário já tem uma ficha pendente
+        const messages = await fichasChannel.messages.fetch({ limit: 50 });
+        const hasActiveRequest = messages.some(msg => {
+          // Procura nos botões da mensagem se o customId contém o ID do usuário
+          // O formato do ID é: accept_verification_USERID_TARGETID
+          return msg.components.some(row =>
+            row.components.some(component =>
+              component.customId && component.customId.startsWith(`accept_verification_${applicantId}_`)
+            )
+          );
+        });
+
+        if (hasActiveRequest) {
+          return interaction.reply({
+            content: "Você já tem uma ficha em aberto.",
+            ephemeral: true
+          });
+        }
+      } catch (error) {
+        console.error("Erro ao verificar fichas duplicadas:", error);
+      }
+    }
+    // --------------------------------------
+
+    const selectedUserId = interaction.values[0]; // ID do usuário selecionado no menu
 
     // Responde apenas para o usuário que interagiu (Ephemeral)
     await interaction.reply({
@@ -25,7 +65,7 @@ async function handleInteraction(interaction) {
 
   // --- Lógica dos Botões (Moderador Aceita ou Nega) ---
   if (interaction.isButton()) {
-    const { customId, member, guild } = interaction;
+    const { customId, member, guild, message } = interaction;
 
     // Verifica se o botão clicado é de aceitar ou negar verificação
     if (customId.startsWith('accept_verification_') || customId.startsWith('deny_verification_')) {
@@ -47,6 +87,27 @@ async function handleInteraction(interaction) {
         });
       }
 
+      // 1. Tenta desabilitar os botões imediatamente para evitar cliques duplos
+      try {
+        const newComponents = message.components.map(c => {
+          // Se for uma ActionRow (tipo 1) e tiver botões (tipo 2)
+          if (c.type === 1 && c.components.some(child => child.type === 2)) {
+            const builder = ActionRowBuilder.from(c);
+            builder.components.forEach(btn => btn.setDisabled(true));
+            return builder;
+          }
+          // Retorna outros componentes (ex: Container) como JSON para não quebrar
+          return c.toJSON();
+        });
+
+        // Atualiza a mensagem desabilitando os botões
+        await interaction.update({ components: newComponents });
+      } catch (error) {
+        // Se falhar (ex: outro mod clicou milissegundos antes), para a execução
+        console.log("Interação já processada ou erro ao atualizar:", error.message);
+        return;
+      }
+
       // Extrai IDs do customId do botão (ex: accept_verification_USERID_TARGETID)
       const parts = customId.split('_');
       const applicantId = parts[2];
@@ -56,13 +117,13 @@ async function handleInteraction(interaction) {
       // Tenta buscar o usuário no servidor
       const applicant = await guild.members.fetch(applicantId).catch(() => null);
 
-      // Se for aceitar e o usuário não estiver mais no servidor, avisa o mod
-      if (!applicant && isAccept) {
-        return interaction.reply({ content: "O usuário saiu do servidor.", ephemeral: true });
+      // Se o usuário não estiver mais no servidor (seja para aceitar ou negar)
+      if (!applicant) {
+        // Usa followUp pois já deu update na interação
+        await interaction.followUp({ content: "O membro não está mais no servidor.", ephemeral: true });
+        await interaction.message.delete().catch(console.error);
+        return;
       }
-
-      // Confirma a interação para o Discord não dar timeout
-      await interaction.deferUpdate();
 
       if (isAccept) {
         // --- CASO ACEITO ---
@@ -72,7 +133,7 @@ async function handleInteraction(interaction) {
           // Adiciona cargo de membro e remove convidado
           await applicant.roles.add(process.env.MEMBER_ROLE_ID).catch(console.error);
           await applicant.roles.remove(process.env.GUEST_ROLE_ID).catch(console.error);
-          
+
           // Envia mensagem no chat geral
           await enviarMensagemBoasVindas(interaction.client, applicantId);
         }

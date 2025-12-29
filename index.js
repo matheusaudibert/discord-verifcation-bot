@@ -2,6 +2,7 @@ require('dotenv').config(); // Carrega variáveis de ambiente do .env
 const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const { enviarPainelVerificacao } = require('./src/verification/verify.js');
 const { handleInteraction } = require('./src/verification/handleInteraction.js');
+const { conectarCanalVoz } = require('./src/voiceStatus.js');
 
 // Configuração do Cliente do Bot com as permissões necessárias (Intents)
 const client = new Client({
@@ -29,6 +30,9 @@ client.once('clientReady', async () => {
     }],
     status: 'online',
   });
+
+  // Conecta no canal de voz
+  await conectarCanalVoz(client);
 
   // Envia/Atualiza o painel de verificação ao iniciar
   await enviarPainelVerificacao(client);
