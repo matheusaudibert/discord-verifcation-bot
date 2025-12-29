@@ -42,7 +42,10 @@ async function sendPng(client) {
   }
 
   // Lança um navegador headless para renderizar o SVG exatamente como no browser
-  const browser = await puppeteer.launch();
+  // Adicionado args para funcionar em ambientes cloud/root
+  const browser = await puppeteer.launch({
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
   const page = await browser.newPage();
 
   // Define escala 2x para garantir alta qualidade (Retina)
@@ -110,14 +113,13 @@ async function sendPng(client) {
   if (lastMessage) {
     try {
       lastMessage = await lastMessage.edit(payload);
-      console.log("✅ Mensagem de convite editada com sucesso");
+
     } catch (error) {
       console.error("Erro ao editar mensagem, enviando nova:", error);
       lastMessage = await channel.send(payload);
     }
   } else {
     lastMessage = await channel.send(payload);
-    console.log("✅ Mensagem de convite enviada com sucesso");
   }
 }
 
